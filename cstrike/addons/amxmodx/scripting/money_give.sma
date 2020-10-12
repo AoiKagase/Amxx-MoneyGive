@@ -25,7 +25,7 @@ Compile and install plugin. (configs/plugins.ini)
 
 -=USAGE=- 
 
-Client command: say /mg or /mgive
+Client command: say /mg or /mgive or /donate or /money
 	- show money give menu.
 	  select player => select money value. give to other player.
 
@@ -357,7 +357,11 @@ public say_mg(id)
 	{
 		if (equali(said, CHAT_CMD[i]))
 		{
-			CmdMoneyTransfer(id, param);
+			trim(param);
+			if (equali(param, ""))
+				mg_player_menu(id);
+			else
+				CmdMoneyTransfer(id, param);
 			break;
 		}
 	}
