@@ -37,6 +37,7 @@ Server Cvars:
 	- amx_mgive_menu_bots		// menu display in bots. 0 = off, 1 = on.
 	- amx_mgive_bots_action		// The bot gives money to those who have the least money. 0 = off, 1 = on.
 								// (Happens when bot kill someone and exceed your maximum money.)
+	- amx_mgive_bank			// Save player money in the bank.
 ================================================ 
 
 -=SpecialThanks=-
@@ -50,6 +51,7 @@ Tester	Mr.Kaseijin
 #include <amxmodx>
 #include <amxmisc>
 #include <cstrike>
+#include <nvault>
 
 #pragma semicolon 1
 /*=====================================*/
@@ -72,6 +74,7 @@ Tester	Mr.Kaseijin
 
 #define CHAT_TAG 					"[MONEY-GIVE]"
 #define CVAR_TAG					"amx_mgive"
+#define NVAULT_NAME					"mgive"
 
 // ADMIN LEVEL
 #define ADMIN_ACCESSLEVEL			ADMIN_LEVEL_H
@@ -91,7 +94,8 @@ enum CVAR_SETTING
 	CVAR_ENEMIES			,		// Menu display in Enemiy team.
 	CVAR_BOTS_MENU			,		// Bots in menu. 0 = none, 1 = admin, 2 = all.
 	CVAR_BOTS_ACTION		,		// Bots give money action.
-	CVAR_MONEY_LIST			,		// Money list.
+	CVAR_MONEY_LIST[MAX_CVAR_LENGTH],		// Money list.
+	CVAR_BANK				,		// Bank system.	
 }
 
 new const CHAT_CMD[][] 		= {
@@ -101,9 +105,9 @@ new const CHAT_CMD[][] 		= {
 	"/mg"
 };
 
-new gCvar[CVAR_SETTING];
+new g_cvar[CVAR_SETTING];
 new Array:gMoneyValues;
-
+new g_nv_handle;
 /*=====================================*/
 /*  STOCK FUNCTIONS				       */
 /*=====================================*/
@@ -142,16 +146,25 @@ public plugin_init()
 	register_clcmd("say_team",	"say_mg");
 
 	// CVar settings.
-	gCvar[CVAR_ENABLE]		= register_cvar(fmt("%s%s", CVAR_TAG, "_enable"),		"1");		// 0 = off, 1 = on.
-	gCvar[CVAR_ACCESS_LEVEL]= register_cvar(fmt("%s%s", CVAR_TAG, "_acs"),			"0");   	// 0 = all, 1 = admin
-	gCvar[CVAR_MAX_MONEY]	= register_cvar(fmt("%s%s", CVAR_TAG, "_max"),			"16000");	// Max have money. 
-	gCvar[CVAR_ENEMIES]		= register_cvar(fmt("%s%s", CVAR_TAG, "_menu_enemies"),	"0");		// enemies in menu. 
-	gCvar[CVAR_BOTS_MENU]	= register_cvar(fmt("%s%s", CVAR_TAG, "_menu_bots"), 	"0");		// Bots in menu. 
-	gCvar[CVAR_BOTS_ACTION]	= register_cvar(fmt("%s%s", CVAR_TAG, "_bots_action"), 	"0");		// Bots action. 
-	gCvar[CVAR_MONEY_LIST]	= register_cvar(fmt("%s%s", CVAR_TAG, "_money_list"),	"100,500,1000,5000,10000,15000");
+	bind_pcvar_num(create_cvar(fmt("%s%s", CVAR_TAG, "_enable"), 		"1"), 		g_cvar[CVAR_ENABLE]);		// 0 = off, 1 = on.
+	bind_pcvar_num(create_cvar(fmt("%s%s", CVAR_TAG, "_acs"), 			"0"), 		g_cvar[CVAR_ACCESS_LEVEL]);	// 0 = all, 1 = admin
+
+	if (!cvar_exists("mp_maxmoney"))
+	bind_pcvar_num(create_cvar(fmt("%s%s", CVAR_TAG, "_max"), 			"16000"), 	g_cvar[CVAR_MAX_MONEY]);	// Max have money. 
+	else // Use ReGameDLL
+	bind_pcvar_num(get_cvar_pointer("mp_maxmoney"), 								g_cvar[CVAR_MAX_MONEY]);	// Max have money. 
+
+	bind_pcvar_num(create_cvar(fmt("%s%s", CVAR_TAG, "_enemies"),		"0"),		g_cvar[CVAR_ENEMIES]);		// Enemies in menu. 
+	bind_pcvar_num(create_cvar(fmt("%s%s", CVAR_TAG, "_bots_menu"),		"0"),		g_cvar[CVAR_BOTS_MENU]);	// Bots in menu. 
+	bind_pcvar_num(create_cvar(fmt("%s%s", CVAR_TAG, "_bots_action"),	"0"),		g_cvar[CVAR_BOTS_ACTION]);	// Bots in action. 
+
+	bind_pcvar_string(create_cvar(fmt("%s%s", CVAR_TAG, "_money_list"),	"100,500,1000,5000,10000,15000"), g_cvar[CVAR_MONEY_LIST], charsmax(g_cvar[CVAR_MONEY_LIST])); 
+
+	bind_pcvar_num(create_cvar(fmt("%s%s", CVAR_TAG, "_bank"),	"1"),				g_cvar[CVAR_BANK]);			// Bank system.
 
 	// Bots Action
-	register_event("DeathMsg", "bots_action", "a");
+	register_event_ex("DeathMsg", "bots_action", RegisterEvent_Global);
+	g_nv_handle 	  			= nvault_open(NVAULT_NAME);
 
 	init_money_list();
 
@@ -164,6 +177,7 @@ public plugin_init()
 public plugin_end() 
 { 
 	ArrayDestroy(gMoneyValues);
+	nvault_close(g_nv_handle);
 }
 
 //====================================================
@@ -173,8 +187,7 @@ init_money_list()
 {
 	gMoneyValues = ArrayCreate(1);
 	new cvar_money[MAX_CVAR_LENGTH];
-	get_pcvar_string(gCvar[CVAR_MONEY_LIST], cvar_money, charsmax(cvar_money));
-	formatex(cvar_money, charsmax(cvar_money), "%s%s", cvar_money, ",");
+	formatex(cvar_money, charsmax(cvar_money), "%s%s", g_cvar[CVAR_MONEY_LIST], ",");
 
 	new i = 0;
 	new iPos = 0;
@@ -185,6 +198,27 @@ init_money_list()
 	}	
 }
 
+public client_authorized(id)
+{
+	if (!g_cvar[CVAR_BANK])
+		return PLUGIN_CONTINUE;
+
+	new authid[MAX_AUTHID_LENGTH], temp[7], timestamp;
+	get_user_authid(id, authid, charsmax(authid));
+
+	if (nvault_lookup(g_nv_handle, authid, temp, charsmax(temp), timestamp))
+		cs_set_user_money(id, str_to_num(temp), 0);
+
+	return PLUGIN_CONTINUE;
+}
+
+public client_disconnected(id)
+{
+	new authid[MAX_AUTHID_LENGTH];
+	get_user_authid(id, authid, charsmax(authid));
+
+	nvault_set(g_nv_handle, authid, fmt("%d", cs_get_user_money(id)));
+}
 //====================================================
 // Main menu.
 //====================================================
@@ -220,12 +254,12 @@ public mg_player_menu(id)
 	const SIZE = 3;
 	new len = 0;
 	// display in bots
-	if (get_pcvar_num(gCvar[CVAR_BOTS_MENU]) == 0)
+	if (g_cvar[CVAR_BOTS_MENU] == 0)
 	{
 		len += formatex(szListFlags[len], SIZE - len, "c");
 	}
 	// display in enemies.
-	if (get_pcvar_num(gCvar[CVAR_ENEMIES]) == 0) 
+	if (g_cvar[CVAR_ENEMIES] == 0) 
 	{
 		len += formatex(szListFlags[len], SIZE - len, "e");
 	}
@@ -340,7 +374,7 @@ public mg_money_menu_handler(id, menu, item)
 //====================================================
 public say_mg(id)
 {
-	if(!get_pcvar_num(gCvar[CVAR_ENABLE]))
+	if(!g_cvar[CVAR_ENABLE])
 		return PLUGIN_CONTINUE;
 
 	if (!check_admin(id))
@@ -381,7 +415,7 @@ public say_mg(id)
 //====================================================
 bool:check_admin(id)
 {
-	if (get_pcvar_num(gCvar[CVAR_ACCESS_LEVEL]) != 0)
+	if (g_cvar[CVAR_ACCESS_LEVEL])
 		return bool:(get_user_flags(id) & ADMIN_ACCESSLEVEL);
 
 	return true;
@@ -389,7 +423,7 @@ bool:check_admin(id)
 
 bool:check_in_team(id)
 {
-	if (get_pcvar_num(gCvar[CVAR_ENEMIES]) != 0)
+	if (g_cvar[CVAR_ENEMIES])
 		return is_user_in_team(id);
 
 	return true;
@@ -405,7 +439,7 @@ public bots_action(id)
 	
 	if (is_user_connected(killer) && is_user_bot(killer))
 	{	
-		new int:maxMoney = int:get_pcvar_num(gCvar[CVAR_MAX_MONEY]);
+		new int:maxMoney = int:g_cvar[CVAR_MAX_MONEY];
 		new int:tgtMoney = maxMoney;
 		new int:botMoney = int:cs_get_user_money(killer);
 
@@ -478,7 +512,7 @@ GetSingleTargetPlayer(id, target[MAX_NAME_LENGTH], &player)
 //====================================================
 TransferMoney(from, to, int:value, bool:fromBot = false)
 {
-	new int:mMoney	= int:get_pcvar_num(gCvar[CVAR_MAX_MONEY]);	// MAX
+	new int:mMoney	= int:g_cvar[CVAR_MAX_MONEY];	// MAX
 	new int:fMoney 	= int:cs_get_user_money(from);				// From
 	new int:tMoney 	= int:cs_get_user_money(to);				// To
 
