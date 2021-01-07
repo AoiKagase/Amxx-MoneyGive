@@ -51,9 +51,11 @@ Tester	Mr.Kaseijin
 #include <amxmodx>
 #include <amxmisc>
 #include <cstrike>
+#include <hamsandwich>
 #include <nvault>
+// #include <orpheu>
+#include <reapi>
 
-#pragma semicolon 1
 /*=====================================*/
 /*  VERSION CHECK				       */
 /*=====================================*/
@@ -96,7 +98,9 @@ enum CVAR_SETTING
 	CVAR_BOTS_ACTION		,		// Bots give money action.
 	CVAR_MONEY_LIST[MAX_CVAR_LENGTH],		// Money list.
 	CVAR_BANK				,		// Bank system.	
-}
+};
+
+#pragma semicolon 1
 
 new const CHAT_CMD[][] 		= {
 	"/money",
@@ -105,9 +109,11 @@ new const CHAT_CMD[][] 		= {
 	"/mg"
 };
 
-new g_cvar[CVAR_SETTING];
 new Array:gMoneyValues;
 new g_nv_handle;
+new g_cvar	[CVAR_SETTING];
+new g_money	[MAX_PLAYERS + 1];
+
 /*=====================================*/
 /*  STOCK FUNCTIONS				       */
 /*=====================================*/
@@ -140,31 +146,35 @@ stock bool:is_user_in_team(id)
 
 public plugin_init() 
 { 
-	register_plugin(PLUGIN, VERSION, AUTHOR); 
+	register_plugin		(PLUGIN, VERSION, AUTHOR); 
 
-	register_clcmd("say", 		"say_mg");
-	register_clcmd("say_team",	"say_mg");
+	register_clcmd		("say", 		"say_mg");
+	register_clcmd		("say_team",	"say_mg");
 
 	// CVar settings.
-	bind_pcvar_num(create_cvar(fmt("%s%s", CVAR_TAG, "_enable"), 		"1"), 		g_cvar[CVAR_ENABLE]);		// 0 = off, 1 = on.
-	bind_pcvar_num(create_cvar(fmt("%s%s", CVAR_TAG, "_acs"), 			"0"), 		g_cvar[CVAR_ACCESS_LEVEL]);	// 0 = all, 1 = admin
+	bind_pcvar_num		(create_cvar(fmt("%s%s", CVAR_TAG, "_enable"), 		"1"), 		g_cvar[CVAR_ENABLE]);		// 0 = off, 1 = on.
+	bind_pcvar_num		(create_cvar(fmt("%s%s", CVAR_TAG, "_acs"), 		"0"), 		g_cvar[CVAR_ACCESS_LEVEL]);	// 0 = all, 1 = admin
 
 	if (!cvar_exists("mp_maxmoney"))
-	bind_pcvar_num(create_cvar(fmt("%s%s", CVAR_TAG, "_max"), 			"16000"), 	g_cvar[CVAR_MAX_MONEY]);	// Max have money. 
+	bind_pcvar_num		(create_cvar(fmt("%s%s", CVAR_TAG, "_max"), 		"16000"), 	g_cvar[CVAR_MAX_MONEY]);	// Max have money. 
 	else // Use ReGameDLL
-	bind_pcvar_num(get_cvar_pointer("mp_maxmoney"), 								g_cvar[CVAR_MAX_MONEY]);	// Max have money. 
+	bind_pcvar_num		(get_cvar_pointer("mp_maxmoney"), 								g_cvar[CVAR_MAX_MONEY]);	// Max have money. 
 
-	bind_pcvar_num(create_cvar(fmt("%s%s", CVAR_TAG, "_enemies"),		"0"),		g_cvar[CVAR_ENEMIES]);		// Enemies in menu. 
-	bind_pcvar_num(create_cvar(fmt("%s%s", CVAR_TAG, "_bots_menu"),		"0"),		g_cvar[CVAR_BOTS_MENU]);	// Bots in menu. 
-	bind_pcvar_num(create_cvar(fmt("%s%s", CVAR_TAG, "_bots_action"),	"0"),		g_cvar[CVAR_BOTS_ACTION]);	// Bots in action. 
+	bind_pcvar_num		(create_cvar(fmt("%s%s", CVAR_TAG, "_enemies"),		"0"),		g_cvar[CVAR_ENEMIES]);		// Enemies in menu. 
+	bind_pcvar_num		(create_cvar(fmt("%s%s", CVAR_TAG, "_bots_menu"),	"0"),		g_cvar[CVAR_BOTS_MENU]);	// Bots in menu. 
+	bind_pcvar_num		(create_cvar(fmt("%s%s", CVAR_TAG, "_bots_action"),	"0"),		g_cvar[CVAR_BOTS_ACTION]);	// Bots in action. 
 
-	bind_pcvar_string(create_cvar(fmt("%s%s", CVAR_TAG, "_money_list"),	"100,500,1000,5000,10000,15000"), g_cvar[CVAR_MONEY_LIST], charsmax(g_cvar[CVAR_MONEY_LIST])); 
+	bind_pcvar_string	(create_cvar(fmt("%s%s", CVAR_TAG, "_money_list"),	"100,500,1000,5000,10000,15000"), g_cvar[CVAR_MONEY_LIST], charsmax(g_cvar[CVAR_MONEY_LIST])); 
 
-	bind_pcvar_num(create_cvar(fmt("%s%s", CVAR_TAG, "_bank"),	"1"),				g_cvar[CVAR_BANK]);			// Bank system.
+	bind_pcvar_num		(create_cvar(fmt("%s%s", CVAR_TAG, "_bank"),		"1"),		g_cvar[CVAR_BANK]);			// Bank system.
 
 	// Bots Action
-	register_event_ex("DeathMsg", "bots_action", RegisterEvent_Global);
-	g_nv_handle 	  			= nvault_open(NVAULT_NAME);
+	register_event_ex	("DeathMsg", "bots_action", RegisterEvent_Global);
+
+//	OrpheuRegisterHook	(OrpheuGetFunction("AddAccount", "CBasePlayer"), "CBasePlayer_AddAccount", OrpheuHookPre);
+	RegisterHookChain	(RG_CBasePlayer_AddAccount, "CBasePlayer_AddAccount");
+	
+	g_nv_handle = nvault_open(NVAULT_NAME);
 
 	init_money_list();
 
@@ -203,21 +213,52 @@ public client_authorized(id)
 	if (!g_cvar[CVAR_BANK])
 		return PLUGIN_CONTINUE;
 
+	if (is_user_bot(id))
+		return PLUGIN_CONTINUE;
+
 	new authid[MAX_AUTHID_LENGTH], temp[7], timestamp;
 	get_user_authid(id, authid, charsmax(authid));
 
 	if (nvault_lookup(g_nv_handle, authid, temp, charsmax(temp), timestamp))
-		cs_set_user_money(id, str_to_num(temp), 0);
+		if (is_user_connected(id))
+			cs_set_user_money(id, str_to_num(temp), 0);
 
 	return PLUGIN_CONTINUE;
 }
 
+// public CBasePlayer_AddAccount(id, amount, type, bool:bTrackChange)
+// {
+// 	client_print(id, print_chat, "TYPE:%d, AMOUNT:%d", type, amount);
+// 	g_money[id] += amount;
+// 	if(type == 2) // RT_PLAYER_RESET;
+// 		OrpheuSetParam(2, g_money[id]);
+//  else
+//		g_money[id] += iAmount;
+// } 
+
+public CBasePlayer_AddAccount(id, iAmount, RewardType:iType, bool:bChange)
+{
+	// client_print(id, print_chat, "TYPE:%d, AMOUNT:%d", iType, iAmount);
+	if (iType == RT_PLAYER_RESET)
+		SetHookChainArg(2, ATYPE_INTEGER, g_money[id]);
+	else
+		g_money[id] += iAmount;
+}
+
 public client_disconnected(id)
 {
+	if (is_user_bot(id))
+		return PLUGIN_CONTINUE;
+
+	if (!g_cvar[CVAR_BANK])
+		return PLUGIN_CONTINUE;
+
 	new authid[MAX_AUTHID_LENGTH];
 	get_user_authid(id, authid, charsmax(authid));
 
-	nvault_set(g_nv_handle, authid, fmt("%d", cs_get_user_money(id)));
+	nvault_set(g_nv_handle, authid, fmt("%d", g_money[id]));
+
+	return PLUGIN_CONTINUE;
 }
 //====================================================
 // Main menu.
