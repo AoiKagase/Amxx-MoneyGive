@@ -90,14 +90,15 @@ Tester	Mr.Kaseijin
 //
 enum CVAR_SETTING
 {
-	CVAR_ENABLE             = 0,    // Plugin Enable.
-	CVAR_ACCESS_LEVEL       ,   	// Access level for 0 = ADMIN or 1 = ALL.
-	CVAR_MAX_MONEY			,		// Max have money. default:$16000
-	CVAR_ENEMIES			,		// Menu display in Enemiy team.
-	CVAR_BOTS_MENU			,		// Bots in menu. 0 = none, 1 = admin, 2 = all.
-	CVAR_BOTS_ACTION		,		// Bots give money action.
-	CVAR_MONEY_LIST[MAX_CVAR_LENGTH],		// Money list.
-	CVAR_BANK				,		// Bank system.	
+	CVAR_ENABLE             = 0,    	// Plugin Enable.
+	CVAR_ACCESS_LEVEL       ,   		// Access level for 0 = ADMIN or 1 = ALL.
+	CVAR_MAX_MONEY			,			// Max have money. default:$16000
+	CVAR_ENEMIES			,			// Menu display in Enemiy team.
+	CVAR_BOTS_MENU			,			// Bots in menu. 0 = none, 1 = admin, 2 = all.
+	CVAR_BOTS_ACTION		,			// Bots give money action.
+	CVAR_MONEY_LIST[MAX_CVAR_LENGTH],	// Money list.
+	CVAR_BANK				,			// Bank system.	
+	CVAR_START_MONEY,
 };
 
 #pragma semicolon 1
@@ -167,6 +168,7 @@ public plugin_init()
 	bind_pcvar_string	(create_cvar(fmt("%s%s", CVAR_TAG, "_money_list"),	"100,500,1000,5000,10000,15000"), g_cvar[CVAR_MONEY_LIST], charsmax(g_cvar[CVAR_MONEY_LIST])); 
 
 	bind_pcvar_num		(create_cvar(fmt("%s%s", CVAR_TAG, "_bank"),		"1"),		g_cvar[CVAR_BANK]);			// Bank system.
+	bind_pcvar_num		(get_cvar_pointer("mp_startmoney"),								g_cvar[CVAR_START_MONEY]);	// Start money.
 
 	// Bots Action
 	register_event_ex	("DeathMsg", "bots_action", RegisterEvent_Global);
@@ -220,8 +222,14 @@ public client_authorized(id)
 	get_user_authid(id, authid, charsmax(authid));
 
 	if (nvault_lookup(g_nv_handle, authid, temp, charsmax(temp), timestamp))
+	{
 		if (is_user_connected(id))
-			cs_set_user_money(id, str_to_num(temp), 0);
+		{
+			new money = str_to_num(temp);
+			money = money > 0 ? money : g_cvar[CVAR_START_MONEY];
+			cs_set_user_money(id, money, 0);
+		}
+	}
 
 	return PLUGIN_CONTINUE;
 }
@@ -239,10 +247,19 @@ public client_authorized(id)
 public CBasePlayer_AddAccount(id, iAmount, RewardType:iType, bool:bChange)
 {
 	// client_print(id, print_chat, "TYPE:%d, AMOUNT:%d", iType, iAmount);
-	if (iType == RT_PLAYER_RESET)
-		SetHookChainArg(2, ATYPE_INTEGER, g_money[id]);
-	else
-		g_money[id] += iAmount;
+	switch (iType)
+	{
+		case RT_INTO_GAME:
+			SetHookChainArg(2, ATYPE_INTEGER, g_money[id]);
+		case RT_PLAYER_JOIN:
+			SetHookChainArg(2, ATYPE_INTEGER, g_money[id]);
+		case RT_PLAYER_RESET:
+			SetHookChainArg(2, ATYPE_INTEGER, g_money[id]);
+		case RT_PLAYER_SPEC_JOIN:
+			SetHookChainArg(2, ATYPE_INTEGER, g_money[id]);
+		default:
+			g_money[id] += iAmount;
+	}
 }
 
 public client_disconnected(id)
