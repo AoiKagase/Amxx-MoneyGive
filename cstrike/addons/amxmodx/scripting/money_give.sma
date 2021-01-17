@@ -225,9 +225,9 @@ public client_authorized(id)
 	{
 		if (is_user_connected(id))
 		{
-			new money = str_to_num(temp);
-			money = money > 0 ? money : g_cvar[CVAR_START_MONEY];
-			cs_set_user_money(id, money, 0);
+			g_money[id] = str_to_num(temp);
+			g_money[id] = g_money[id] > 0 ? g_money[id] : g_cvar[CVAR_START_MONEY];
+			cs_set_user_money(id, g_money[id], 0);
 		}
 	}
 
