@@ -51,6 +51,7 @@ Tester	Mr.Kaseijin
 #include <amxmodx>
 #include <amxmisc>
 #include <cstrike>
+#include <fakemeta>
 #include <hamsandwich>
 #include <nvault>
 // #include <orpheu>
@@ -72,7 +73,7 @@ Tester	Mr.Kaseijin
 // AUTHOR NAME +ARUKARI- => SandStriker => Aoi.Kagase
 #define AUTHOR 						"Aoi.Kagase"
 #define PLUGIN 						"MONEY-GIVE"
-#define VERSION 					"2.03"
+#define VERSION 					"2.04"
 
 #define CHAT_TAG 					"[MONEY-GIVE]"
 #define CVAR_TAG					"amx_mgive"
@@ -81,6 +82,7 @@ Tester	Mr.Kaseijin
 // ADMIN LEVEL
 #define ADMIN_ACCESSLEVEL			ADMIN_LEVEL_H
 #define MAX_CVAR_LENGTH				64
+#define OFFSET_MONEY 				115
 
 //====================================================
 // ENUM AREA
@@ -123,14 +125,14 @@ new g_money	[MAX_PLAYERS + 1];
 //
 stock cs_get_user_team_name(id)
 {
-	new team[3];
+	new team[10];
 	// Witch your team?
 	switch(CsTeams:cs_get_user_team(id))
 	{
 		case CS_TEAM_CT: 
 			team = "CT";
 		case CS_TEAM_T : 
-			team = "T";
+			team = "TERRORIST";
 		default:
 			team = "";
 	}
@@ -162,7 +164,7 @@ public plugin_init()
 	bind_pcvar_num		(get_cvar_pointer("mp_maxmoney"), 								g_cvar[CVAR_MAX_MONEY]);	// Max have money. 
 
 	bind_pcvar_num		(create_cvar(fmt("%s%s", CVAR_TAG, "_enemies"),		"0"),		g_cvar[CVAR_ENEMIES]);		// Enemies in menu. 
-	bind_pcvar_num		(create_cvar(fmt("%s%s", CVAR_TAG, "_bots_menu"),	"0"),		g_cvar[CVAR_BOTS_MENU]);	// Bots in menu. 
+	bind_pcvar_num		(create_cvar(fmt("%s%s", CVAR_TAG, "_bots_menu"),	"1"),		g_cvar[CVAR_BOTS_MENU]);	// Bots in menu. 
 	bind_pcvar_num		(create_cvar(fmt("%s%s", CVAR_TAG, "_bots_action"),	"0"),		g_cvar[CVAR_BOTS_ACTION]);	// Bots in action. 
 
 	bind_pcvar_string	(create_cvar(fmt("%s%s", CVAR_TAG, "_money_list"),	"100,500,1000,5000,10000,15000"), g_cvar[CVAR_MONEY_LIST], charsmax(g_cvar[CVAR_MONEY_LIST])); 
@@ -247,6 +249,8 @@ public client_authorized(id)
 public CBasePlayer_AddAccount(id, iAmount, RewardType:iType, bool:bChange)
 {
 	// client_print(id, print_chat, "TYPE:%d, AMOUNT:%d", iType, iAmount);
+	g_money[id] += iAmount;
+
 	switch (iType)
 	{
 		case RT_INTO_GAME:
@@ -257,9 +261,8 @@ public CBasePlayer_AddAccount(id, iAmount, RewardType:iType, bool:bChange)
 			SetHookChainArg(2, ATYPE_INTEGER, g_money[id]);
 		case RT_PLAYER_SPEC_JOIN:
 			SetHookChainArg(2, ATYPE_INTEGER, g_money[id]);
-		default:
-			g_money[id] += iAmount;
 	}
+	
 }
 
 public client_disconnected(id)
@@ -273,7 +276,7 @@ public client_disconnected(id)
 	new authid[MAX_AUTHID_LENGTH];
 	get_user_authid(id, authid, charsmax(authid));
 
-	nvault_set(g_nv_handle, authid, fmt("%d", g_money[id]));
+	nvault_set(g_nv_handle, authid, fmt("%d", get_pdata_int(id, OFFSET_MONEY)));
 
 	return PLUGIN_CONTINUE;
 }
@@ -295,7 +298,7 @@ public mg_player_menu(id)
 	new players[MAX_PLAYERS], pnum, tempid;
 
 	// Some variables to hold information about the players
-	new szName[32], szUserId[32], szMenu[32], szListFlags[3];
+	new szName[32], szUserId[32], szMenu[32], szListFlags[4] = "";
 	//new int:money;
 
 	// Fill players with available players
@@ -313,14 +316,12 @@ public mg_player_menu(id)
 	new len = 0;
 	// display in bots
 	if (g_cvar[CVAR_BOTS_MENU] == 0)
-	{
 		len += formatex(szListFlags[len], SIZE - len, "c");
-	}
+
 	// display in enemies.
 	if (g_cvar[CVAR_ENEMIES] == 0) 
-	{
 		len += formatex(szListFlags[len], SIZE - len, "e");
-	}
+
 	// don't include HLTV proxies
 	len += formatex(szListFlags[len], SIZE - len, "h");
 
@@ -328,7 +329,7 @@ public mg_player_menu(id)
 	get_players( players, pnum, szListFlags, cs_get_user_team_name(id));
 
 	//Start looping through all players
-	for ( new i; i<pnum; i++ )
+	for (new i = 0; i < pnum; i++)
 	{
 		//Save a tempid so we do not re-index
 		tempid = players[i];
@@ -443,8 +444,8 @@ public say_mg(id)
 	new szMessage[charsmax( said ) + charsmax( param ) + 2];
 	
 	read_argv(1, szMessage, charsmax(szMessage)); 
-	argbreak(szMessage, said, charsmax(param), param, charsmax(param)); 
-	
+	argbreak(szMessage, said, charsmax(said), param, charsmax(param)); 
+
 	for(new i = 0; i < sizeof(CHAT_CMD); i++)
 	{
 		if (equali(said, CHAT_CMD[i]))
@@ -454,7 +455,7 @@ public say_mg(id)
 				mg_player_menu(id);
 			else
 				CmdMoneyTransfer(id, param);
-			break;
+			return PLUGIN_CONTINUE;
 		}
 	}
 
