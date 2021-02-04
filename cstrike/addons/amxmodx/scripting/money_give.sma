@@ -48,15 +48,19 @@ Tester	Mr.Kaseijin
 
 ================================================
 */
+// #define REAPI_SUPPORT
+
 #include <amxmodx>
 #include <amxmisc>
 #include <cstrike>
 #include <fakemeta>
 #include <hamsandwich>
 #include <nvault>
+
+#if defined REAPI_SUPPORT
 // #include <orpheu>
 #include <reapi>
-
+#endif
 /*=====================================*/
 /*  VERSION CHECK				       */
 /*=====================================*/
@@ -175,9 +179,11 @@ public plugin_init()
 	// Bots Action
 	register_event_ex	("DeathMsg", "bots_action", RegisterEvent_Global);
 
+#if defined REAPI_SUPPORT
 //	OrpheuRegisterHook	(OrpheuGetFunction("AddAccount", "CBasePlayer"), "CBasePlayer_AddAccount", OrpheuHookPre);
 	RegisterHookChain	(RG_CBasePlayer_AddAccount, "CBasePlayer_AddAccount");
-	
+#endif
+
 	g_nv_handle = nvault_open(NVAULT_NAME);
 
 	init_money_list();
@@ -236,6 +242,7 @@ public client_authorized(id)
 	return PLUGIN_CONTINUE;
 }
 
+#if defined REAPI_SUPPORT
 // public CBasePlayer_AddAccount(id, amount, type, bool:bTrackChange)
 // {
 // 	client_print(id, print_chat, "TYPE:%d, AMOUNT:%d", type, amount);
@@ -264,6 +271,7 @@ public CBasePlayer_AddAccount(id, iAmount, RewardType:iType, bool:bChange)
 	}
 	
 }
+#endif
 
 public client_disconnected(id)
 {
@@ -276,7 +284,8 @@ public client_disconnected(id)
 	new authid[MAX_AUTHID_LENGTH];
 	get_user_authid(id, authid, charsmax(authid));
 
-	nvault_set(g_nv_handle, authid, fmt("%d", get_pdata_int(id, OFFSET_MONEY)));
+	if(pev_valid(id))
+		nvault_set(g_nv_handle, authid, fmt("%d", get_pdata_int(id, OFFSET_MONEY)));
 
 	return PLUGIN_CONTINUE;
 }
@@ -596,8 +605,10 @@ TransferMoney(from, to, int:value, bool:fromBot = false)
 		tMoney += value;
 	}
 
-	cs_set_user_money	(from, 	fMoney);
-	cs_set_user_money	(to,	tMoney);
+	if (is_user_connected(from))
+		cs_set_user_money	(from, 	fMoney);
+	if (is_user_connected(to))
+		cs_set_user_money	(to,	tMoney);
 
 	if (!fromBot)
 	client_print_color	(from,	print_chat, "^4%s ^1$%d was give to ^3^"%n^".", 	CHAT_TAG, value, to);
