@@ -48,7 +48,7 @@ Tester	Mr.Kaseijin
 
 ================================================
 */
-// #define REAPI_SUPPORT
+#define REAPI_SUPPORT
 
 #include <amxmodx>
 #include <amxmisc>
@@ -231,17 +231,25 @@ public client_authorized(id)
 
 	if (nvault_lookup(g_nv_handle, authid, temp, charsmax(temp), timestamp))
 	{
-		if (is_user_connected(id))
-		{
-			g_money[id] = str_to_num(temp);
-			g_money[id] = g_money[id] > 0 ? g_money[id] : g_cvar[CVAR_START_MONEY];
-			cs_set_user_money(id, g_money[id], 0);
-		}
+		g_money[id] = str_to_num(temp);
+		g_money[id] = g_money[id] > 0 ? g_money[id] : g_cvar[CVAR_START_MONEY];
 	}
 
 	return PLUGIN_CONTINUE;
 }
 
+public client_putinserver(id)
+{
+	if (!g_cvar[CVAR_BANK])
+		return PLUGIN_CONTINUE;
+
+	if (is_user_bot(id))
+		return PLUGIN_CONTINUE;
+
+	if (is_user_connected(id))
+		cs_set_user_money(id, g_money[id], 0);
+
+}
 #if defined REAPI_SUPPORT
 // public CBasePlayer_AddAccount(id, amount, type, bool:bTrackChange)
 // {
@@ -255,9 +263,7 @@ public client_authorized(id)
 
 public CBasePlayer_AddAccount(id, iAmount, RewardType:iType, bool:bChange)
 {
-	// client_print(id, print_chat, "TYPE:%d, AMOUNT:%d", iType, iAmount);
-	g_money[id] += iAmount;
-
+	server_print("TYPE:%d, AMOUNT:%d", iType, iAmount);
 	switch (iType)
 	{
 		case RT_INTO_GAME:
@@ -268,8 +274,11 @@ public CBasePlayer_AddAccount(id, iAmount, RewardType:iType, bool:bChange)
 			SetHookChainArg(2, ATYPE_INTEGER, g_money[id]);
 		case RT_PLAYER_SPEC_JOIN:
 			SetHookChainArg(2, ATYPE_INTEGER, g_money[id]);
+		default:
+			return HC_CONTINUE;
 	}
-	
+	g_money[id] += iAmount;
+	return HC_SUPERCEDE;
 }
 #endif
 
