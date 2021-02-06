@@ -249,6 +249,7 @@ public client_putinserver(id)
 	if (is_user_connected(id))
 		cs_set_user_money(id, g_money[id], 0);
 
+	return PLUGIN_CONTINUE;
 }
 #if defined REAPI_SUPPORT
 // public CBasePlayer_AddAccount(id, amount, type, bool:bTrackChange)
@@ -263,7 +264,7 @@ public client_putinserver(id)
 
 public CBasePlayer_AddAccount(id, iAmount, RewardType:iType, bool:bChange)
 {
-	server_print("TYPE:%d, AMOUNT:%d", iType, iAmount);
+	// server_print("TYPE:%d, AMOUNT:%d", iType, iAmount);
 	switch (iType)
 	{
 		case RT_INTO_GAME:
