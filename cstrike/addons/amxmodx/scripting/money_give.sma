@@ -57,10 +57,10 @@ Tester	Mr.Kaseijin
 #include <hamsandwich>
 #include <nvault>
 
-#if defined REAPI_SUPPORT
-// #include <orpheu>
+#define AMXMODX_NOAUTOLOAD
 #include <reapi>
-#endif
+#include <orpheu>
+
 /*=====================================*/
 /*  VERSION CHECK				       */
 /*=====================================*/
@@ -77,7 +77,7 @@ Tester	Mr.Kaseijin
 // AUTHOR NAME +ARUKARI- => SandStriker => Aoi.Kagase
 #define AUTHOR 						"Aoi.Kagase"
 #define PLUGIN 						"MONEY-GIVE"
-#define VERSION 					"2.04"
+#define VERSION 					"2.05"
 
 #define CHAT_TAG 					"[MONEY-GIVE]"
 #define CVAR_TAG					"amx_mgive"
@@ -107,6 +107,12 @@ enum CVAR_SETTING
 	CVAR_START_MONEY,
 };
 
+enum EXISTS_MODULE
+{
+	bool:REAPI,
+	bool:ORPHEU,
+};
+
 #pragma semicolon 1
 
 new const CHAT_CMD[][] 		= {
@@ -118,9 +124,10 @@ new const CHAT_CMD[][] 		= {
 
 new Array:gMoneyValues;
 new g_nv_handle;
-new g_cvar	[CVAR_SETTING];
-new g_money	[MAX_PLAYERS + 1];
-
+new g_cvar		[CVAR_SETTING];
+new g_money		[MAX_PLAYERS + 1];
+new g_money_save[MAX_PLAYERS + 1];
+new g_load_library[EXISTS_MODULE];
 /*=====================================*/
 /*  STOCK FUNCTIONS				       */
 /*=====================================*/
@@ -178,10 +185,30 @@ public plugin_init()
 
 	// Bots Action
 	register_event_ex	("DeathMsg", "bots_action", RegisterEvent_Global);
+	register_message	(get_user_msgid("Money"), "SaveMoney");
 
+	if (g_cvar[CVAR_BANK])
+	{
+		if (LibraryExists("reapi", LibType_Library))
+		{
+			g_load_library[REAPI] = true;
+			RegisterHookChain(RG_CBasePlayer_AddAccount, "ReApiHookAddAccount");
+		}
+		else
+		{
+			if (LibraryExists("orpheu", LibType_Library))
+			{
+				g_load_library[ORPHEU] = true;
+				OrpheuRegisterHook(OrpheuGetFunction("AddAccount", "CBasePlayer"), "OrpheuHookAddAccount", OrpheuHookPre);
+			}
+			else
+			{
+				server_print("%s Can't load module, Orpheu or ReAPI.", CHAT_TAG);
+				server_print("%s The player's banking mode will be turned off.", CHAT_TAG);
+			}
+		}
+	}
 #if defined REAPI_SUPPORT
-//	OrpheuRegisterHook	(OrpheuGetFunction("AddAccount", "CBasePlayer"), "CBasePlayer_AddAccount", OrpheuHookPre);
-	RegisterHookChain	(RG_CBasePlayer_AddAccount, "CBasePlayer_AddAccount");
 #endif
 
 	g_nv_handle = nvault_open(NVAULT_NAME);
@@ -191,6 +218,37 @@ public plugin_init()
 	return PLUGIN_CONTINUE;
 } 
 
+//====================================================
+// Check Module. Section 1.
+//====================================================
+public plugin_natives()
+{
+	set_module_filter("module_filter");
+	set_native_filter("native_filter");
+}
+//====================================================
+// Check Module. Section 2.
+//====================================================
+public module_filter(const module[])
+{
+	if (equali(module, "orpheu") || equali(module, "reapi"))
+	{
+		return PLUGIN_HANDLED;
+	}
+
+	return PLUGIN_CONTINUE;
+}
+
+//====================================================
+// Check Module. Section 3.
+//====================================================
+public native_filter(const name[], index, trap)
+{
+	if (!trap)
+		return PLUGIN_HANDLED;
+
+	return PLUGIN_CONTINUE;
+}
 //====================================================
 // Destruction.
 //====================================================
@@ -251,20 +309,18 @@ public client_putinserver(id)
 
 	return PLUGIN_CONTINUE;
 }
-#if defined REAPI_SUPPORT
-// public CBasePlayer_AddAccount(id, amount, type, bool:bTrackChange)
-// {
-// 	client_print(id, print_chat, "TYPE:%d, AMOUNT:%d", type, amount);
-// 	g_money[id] += amount;
-// 	if(type == 2) // RT_PLAYER_RESET;
-// 		OrpheuSetParam(2, g_money[id]);
-//  else
-//		g_money[id] += iAmount;
-// } 
 
-public CBasePlayer_AddAccount(id, iAmount, RewardType:iType, bool:bChange)
+public OrpheuHookReturn:OrpheuHookAddAccount(id, iAmount, bool:bTrackChange)
 {
-	// server_print("TYPE:%d, AMOUNT:%d", iType, iAmount);
+	client_print(id, print_chat, "HAVE:%d, AMOUNT:%d", g_money[id], iAmount);
+	g_money[id] += iAmount;
+	OrpheuSetParam(2, g_money[id]);
+	return OrpheuSupercede;
+} 
+
+public ReApiHookAddAccount(id, iAmount, RewardType:iType, bool:bChange)
+{
+	server_print("TYPE:%d, AMOUNT:%d", iType, iAmount);
 	switch (iType)
 	{
 		case RT_INTO_GAME:
@@ -281,8 +337,10 @@ public CBasePlayer_AddAccount(id, iAmount, RewardType:iType, bool:bChange)
 	g_money[id] += iAmount;
 	return HC_SUPERCEDE;
 }
-#endif
 
+//====================================================
+// Client Disconnected.
+//====================================================
 public client_disconnected(id)
 {
 	if (is_user_bot(id))
@@ -295,10 +353,20 @@ public client_disconnected(id)
 	get_user_authid(id, authid, charsmax(authid));
 
 	if(pev_valid(id))
-		nvault_set(g_nv_handle, authid, fmt("%d", get_pdata_int(id, OFFSET_MONEY)));
+		nvault_set(g_nv_handle, authid, fmt("%d", g_money_save[id]));
 
 	return PLUGIN_CONTINUE;
 }
+
+//====================================================
+// Save Money.
+//====================================================
+public SaveMoney(iMsg, iValue, id)
+{
+	g_money_save[id] = get_msg_arg_int(1);
+	return PLUGIN_CONTINUE;
+}
+
 //====================================================
 // Main menu.
 //====================================================
